@@ -1,0 +1,9 @@
+FROM python:3.6.3
+WORKDIR /python/src/github.com/callstats-io/ai-decision
+ADD requirements.txt .
+RUN pip install -r requirements.txt
+RUN pip install pylama pytest==3.2.1
+RUN pip install pylama==7.4.3
+RUN pip install pytest-cov==2.5.1
+ADD . .
+CMD pylama && pytest --cov=src -s test

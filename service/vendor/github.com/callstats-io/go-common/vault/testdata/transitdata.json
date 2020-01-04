@@ -1,0 +1,10 @@
+[
+  {
+    "encryptPath": "test/transit/encrypt/gocommon",
+    "decryptPath": "test/transit/decrypt/gocommon",
+    "keyRingPath": "test/transit/keys/gocommon",
+    "plaintext": "YWJjZGVm",
+    "outputPath": "test/generic/gocommon/obfuscation",
+    "outputTemplate": "{\"keys\": [{\"key\": \"%s\",\"id\": \"1\"}]}"
+  }
+]

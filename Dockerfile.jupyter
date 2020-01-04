@@ -1,0 +1,55 @@
+# Copyright (c) Jupyter Development Team.
+# Distributed under the terms of the Modified BSD License.
+FROM jupyter/minimal-notebook
+
+LABEL maintainer="Jupyter Project <jupyter@googlegroups.com>"
+
+USER root
+ADD jupyter-environment.yml .
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libav-tools && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+USER $NB_USER
+
+# Install Python 3 packages
+# Remove pyqt and qt pulled in for matplotlib since we're only ever going to
+# use notebook-friendly backends in these images
+RUN conda env create -f jupyter-environment.yml
+
+ENV PATH /opt/conda/envs/jupyter-csio/bin:$PATH
+ENV CONDA_DEFAULT_ENV jupyter-csio
+
+RUN conda clean -tipsy && \
+    # Activate ipywidgets extension in the environment that runs the notebook server
+    jupyter nbextension enable --py widgetsnbextension --sys-prefix && \
+    fix-permissions $CONDA_DIR
+
+# Install facets which does not have a pip or conda package at the moment
+RUN cd /tmp && \
+    git clone https://github.com/PAIR-code/facets.git && \
+    cd facets && \
+    jupyter nbextension install facets-dist/ --sys-prefix && \
+    rm -rf facets && \
+    fix-permissions $CONDA_DIR
+
+# Import matplotlib the first time to build the font cache.
+ENV XDG_CACHE_HOME /home/$NB_USER/.cache/
+RUN MPLBACKEND=Agg python -c "import matplotlib.pyplot" && \
+    fix-permissions /home/$NB_USER
+
+USER root
+RUN DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y apt-transport-https && \
+    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 2930ADAE8CAF5059EE73BB4B58712A2291FA4AD5 && \
+    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.6 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-3.6.list && \
+    apt-get update && \
+    apt-get install -y mongodb-org-shell=3.6.2 && \
+    apt-get install -y mongodb-org-tools=3.6.2 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+USER $NB_USER

@@ -1,0 +1,252 @@
+node {
+    stage 'Init'
+    step([
+      $class: 'GitHubCommitStatusSetter',
+      contextSource: [
+        $class: 'ManuallyEnteredCommitContextSource',
+        context: 'jenkins/test-build'
+      ],
+      statusResultSource: [
+        $class: 'ConditionalStatusResultSource',
+        results: [
+          [
+            $class: 'AnyBuildResult',
+            message: 'Build container',
+            state: 'PENDING'
+          ]
+        ]
+      ]
+    ])
+    step([
+      $class: 'GitHubCommitStatusSetter',
+      contextSource: [
+        $class: 'ManuallyEnteredCommitContextSource',
+        context: 'jenkins/test-fmt'
+      ],
+      statusResultSource: [
+        $class: 'ConditionalStatusResultSource',
+        results: [
+          [
+            $class: 'AnyBuildResult',
+            message: 'Check golang files are formatted correctly',
+            state: 'PENDING'
+          ]
+        ]
+      ]
+    ])
+    step([
+      $class: 'GitHubCommitStatusSetter',
+      contextSource: [
+        $class: 'ManuallyEnteredCommitContextSource',
+        context: 'jenkins/test-lint'
+      ],
+      statusResultSource: [
+        $class: 'ConditionalStatusResultSource',
+        results: [
+          [
+            $class: 'AnyBuildResult',
+            message: 'Check golang files pass golint test',
+            state: 'PENDING'
+          ]
+        ]
+      ]
+    ])
+    step([
+      $class: 'GitHubCommitStatusSetter',
+      contextSource: [
+        $class: 'ManuallyEnteredCommitContextSource',
+        context: 'jenkins/test-vet'
+      ],
+      statusResultSource: [
+        $class: 'ConditionalStatusResultSource',
+        results: [
+          [
+            $class: 'AnyBuildResult',
+            message: 'Check golang files pass \'go vet\' test',
+            state: 'PENDING'
+          ]
+        ]
+      ]
+    ])
+    step([
+      $class: 'GitHubCommitStatusSetter',
+      contextSource: [
+        $class: 'ManuallyEnteredCommitContextSource',
+        context: 'jenkins/test-unit'
+      ],
+      statusResultSource: [
+        $class: 'ConditionalStatusResultSource',
+        results: [
+          [
+            $class: 'AnyBuildResult',
+            message: 'Run tests',
+            state: 'PENDING'
+          ]
+        ]
+      ]
+    ])
+    def mongoImage = docker.image('mongo:3.6');
+    mongoImage.pull()
+    def postgresImage = docker.image('postgres:9.5');
+    postgresImage.pull()
+    def vaultImage = docker.image('vault:0.6.2')
+    vaultImage.pull()
+    def zookeeperImage = docker.image('zookeeper:3.4')
+    zookeeperImage.pull()
+    def kafkaImage = docker.image('ches/kafka:0.8.2.2')
+    kafkaImage.pull()
+    // Mark the code checkout 'stage'....
+    stage 'Checkout'
+    // Get some code from a GitHub repository
+    checkout scm
+
+    def tests=["jenkins/test-build","jenkins/test-fmt","jenkins/test-lint","jenkins/test-vet","jenkins/test-unit"]
+    // [].removeElement is not whitelisted
+    def completedTests=[]
+    try {
+        // Mark the code build 'stage'....
+        stage 'Build'
+        // docker.build has no argument for different Dockerfile than default
+        sh 'docker build -t callstats_go_common_test:snapshot -f Dockerfile.test .'
+        def testService = docker.image 'callstats_go_common_test:snapshot'
+
+        step([
+          $class: 'GitHubCommitStatusSetter',
+          contextSource: [
+            $class: 'ManuallyEnteredCommitContextSource',
+            context: 'jenkins/test-build'
+          ],
+          statusResultSource: [
+            $class: 'ConditionalStatusResultSource',
+            results: [
+              [
+                $class: 'AnyBuildResult',
+                message: 'Build OK',
+                state: 'SUCCESS'
+              ]
+            ]
+          ]
+        ])
+        completedTests.add('jenkins/test-build')
+
+        stage 'Test'
+        mongoImage.withRun("-e MONGO_INITDB_ROOT_USERNAME=vault -e MONGO_INITDB_ROOT_PASSWORD=vault") { mongo->
+          postgresImage.withRun("-e POSTGRES_USER=go_common -e POSTGRES_PASSWORD=test -e POSTGRES_DB=go_common") { postgre->
+            vaultImage.withRun("--link ${mongo.id}:mongo --link ${postgre.id}:postgres -e VAULT_DEV_ROOT_TOKEN_ID=def76607-c3c0-4390-939d-1c844619340a") {vault ->
+              zookeeperImage.withRun { zookeeper ->
+                kafkaImage.withRun("--link ${zookeeper.id}:zookeeper --add-host kafka:127.0.0.1 -e KAFKA_ADVERTISED_HOST_NAME=kafka -e ZOOKEEPER_IP=zookeeper -e KAFKA_PORT=9092 -e KAFKA_ADVERTISED_PORT=9092 -e KAFKA_CREATE_TOPICS=testTopic:1:1") { kafka ->
+                  // NOTE: ran as root to enable go compilation in jenkins
+                  testService.inside("--link ${mongo.id}:mongo --link ${postgre.id}:postgres --link ${vault.id}:vault --link ${zookeeper.id}:zookeeper --link ${kafka.id}:kafka --user=root -e ENV=test -e MONGO_CONN_TMPL=mongodb://%s:%s@mongo:27017/admin -e VAULT_ENABLE_POSTGRES=true -e SERVICE_NAME=go_common -e HTTPS_PORT=6500 -e HTTP_PORT=6501 -e GRPC_PORT=6502 -e LOG_LEVEL=PANIC -e POSTGRES_CONN_TMPL=postgres://%s:%s@postgres:5432/go_common_test -e VAULT_ADDR=http://vault:8200 -e VAULT_SKIP_VERIFY=true -e VAULT_MONGO_CREDS_PATH=test/mongodb/testc1/creds/go_common -e VAULT_ENABLE_MONGO=true -e VAULT_POSTGRES_CREDS_PATH=test/postgresql/go_common_vault/creds/go_common -e VAULT_ENABLE_TLS_CERT=true -e VAULT_TLS_CERT_PATH=test/generic/go_common/certificates/x509/cert -e VAULT_TLS_CERT_KEY_PATH=test/generic/go_common/certificates/x509/key -e VAULT_TEST_BOOTSTRAP_TOKEN=def76607-c3c0-4390-939d-1c844619340a -e VAULT_POSTGRES_NAME=go_common_vault -e VAULT_POSTGRES_ROOT_URL=postgres://go_common:test@postgres:5432/go_common_test?sslmode=disable -e VAULT_POSTGRES_CONN_TMPL=postgres://%s:%s@postgres:5432/go_common_test -e VAULT_MONGO_CLUSTER_NAME=testc1 -e VAULT_MONGO_ROOT_URL=mongodb://vault:vault@mongo:27017/admin?ssl=false -e VAULT_MONGO_CONN_TMPL=mongodb://%s:%s@mongo:27017/admin -e VAULT_TLS_CERT_NAME=x509 -e VAULT_ENABLE_AWS=false -e VAULT_AWS_ROOT_ACCESS_KEY=AAAAAAAAAAAAAAAAAAAA -e VAULT_AWS_ROOT_SECRET_KEY=zZzZzZzZzZzZ1234zZzZzZzZzZzZzZzZ123456 -e VAULT_AWS_CREDS_PATH=test/aws/sts/go_common -e VAULT_AWS_ASSUME_ROLE=go_common|arn:aws:iam::123412342134:role/go_common_fake_role_name -e ZOOKEEPER_URLS=zookeeper") {
+                      // fail if the files have not bee formatted
+                      sh 'cd /go/src/github.com/callstats-io/go-common; test -z $(gofmt -l $(find . -type f -name \'*.go\' -not -path "./vendor/*"))'
+                      step([
+                        $class: 'GitHubCommitStatusSetter',
+                        contextSource: [
+                          $class: 'ManuallyEnteredCommitContextSource',
+                          context: 'jenkins/test-fmt'
+                        ],
+                        statusResultSource: [
+                          $class: 'ConditionalStatusResultSource',
+                          results: [
+                            [
+                              $class: 'AnyBuildResult',
+                              message: 'Golang code formatted correctly',
+                              state: 'SUCCESS'
+                            ]
+                          ]
+                        ]
+                      ])
+                      completedTests.add('jenkins/test-fmt')
+
+                      sh 'cd /go/src/github.com/callstats-io/go-common; test -z $(golint $(go list ./... | grep -v /vendor/))'
+                      step([
+                        $class: 'GitHubCommitStatusSetter',
+                        contextSource: [
+                          $class: 'ManuallyEnteredCommitContextSource',
+                          context: 'jenkins/test-lint'
+                        ],
+                        statusResultSource: [
+                          $class: 'ConditionalStatusResultSource',
+                          results: [
+                            [
+                              $class: 'AnyBuildResult',
+                              message: 'Golint test passed',
+                              state: 'SUCCESS'
+                            ]
+                          ]
+                        ]
+                      ])
+                      completedTests.add('jenkins/test-lint')
+
+                      sh 'cd /go/src/github.com/callstats-io/go-common; test -z $(go vet $(go list ./... | grep -v /vendor/))'
+                      step([
+                        $class: 'GitHubCommitStatusSetter',
+                        contextSource: [
+                          $class: 'ManuallyEnteredCommitContextSource',
+                          context: 'jenkins/test-vet'
+                        ],
+                        statusResultSource: [
+                          $class: 'ConditionalStatusResultSource',
+                          results: [
+                            [
+                              $class: 'AnyBuildResult',
+                              message: 'Go vet test passed',
+                              state: 'SUCCESS'
+                            ]
+                          ]
+                        ]
+                      ])
+                      completedTests.add('jenkins/test-vet')
+
+                      // move back to the expected go root folder before running ginkgo to get vendored assets in correct path
+                      sh 'cd /go/src/github.com/callstats-io/go-common; go test $(go list ./... | grep -v /vendor/  | grep -v vault) && go test ./vault'
+                      step([
+                        $class: 'GitHubCommitStatusSetter',
+                        contextSource: [
+                          $class: 'ManuallyEnteredCommitContextSource',
+                          context: 'jenkins/test-unit'
+                        ],
+                        statusResultSource: [
+                          $class: 'ConditionalStatusResultSource',
+                          results: [
+                            [
+                              $class: 'AnyBuildResult',
+                              message: 'Golang code formatted correctly',
+                              state: 'SUCCESS'
+                            ]
+                          ]
+                        ]
+                      ])
+                      completedTests.add('jenkins/test-unit')
+                  }
+                }
+              }
+            }
+          }
+        }
+    } catch (err) {
+        // [].each is not supported. JENKINS-26481
+        for(int i = 0; i < tests.size(); i++) {
+            if (!completedTests.contains(tests[i])) {
+                step([
+                  $class: 'GitHubCommitStatusSetter',
+                  contextSource: [
+                    $class: 'ManuallyEnteredCommitContextSource',
+                    context: tests[i]
+                  ],
+                  statusResultSource: [
+                    $class: 'ConditionalStatusResultSource',
+                    results: [
+                      [
+                        $class: 'AnyBuildResult',
+                        message: 'Build Fail',
+                        state: 'FAILURE'
+                      ]
+                    ]
+                  ]
+                ])
+            }
+        }
+        throw err
+    }
+}

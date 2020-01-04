@@ -1,0 +1,93 @@
+syntax="proto3";
+package callstats.ai_decision;
+
+option go_package="protos";
+option java_package = "io.callstats.ai_decision.service";
+
+import "google/protobuf/timestamp.proto";
+
+message Message {
+    string  message = 1;
+    int32   app_id = 2;
+    string  type = 3;
+    int32   version = 4;
+    bytes   data = 5;
+    google.protobuf.Timestamp generation_time = 6;
+}
+
+message MessageCreateRequest {
+    int32   app_id = 1;
+
+    // type + version together MUST uniquely identify a template. Furthermore, message data MUST
+    // be compatible with all previous versions of a template type.
+    string  type = 2;
+    int32   version = 3;
+
+    // The decision not to use explicit messages was made to enable analytics to use the service in a data driven fashion
+    // with minimal chance for logical updates. Thus the RPC uses an ambiguous format for data.
+    // Initially we intended this to  be a map<string,any>. However, working with protobuf any is super cumbersome
+    // making it more convenient to pass around a rendered json blob.
+    // The downside is producers need to unmarshal the json themselves which adds a bit of overhead.
+    // We should be able to abstract this away with client wrappings though.
+    bytes   data = 4;
+
+    google.protobuf.Timestamp generation_time = 5;
+}
+
+message MessageListRequest {
+    int32   app_id = 1;
+    string  type = 2;
+
+    // version range to include
+    int32  min_version = 3;
+    int32  max_version = 4;
+
+    // generation time range to include
+    google.protobuf.Timestamp generation_time_from = 5;
+    google.protobuf.Timestamp generation_time_to = 6;
+}
+
+service AIDecisionMessageService {
+    rpc Create(MessageCreateRequest) returns (Message);
+
+    rpc List(MessageListRequest) returns (stream Message);
+}
+
+
+message State {
+    int32   app_id = 1;
+    string  keyword = 2;
+    bytes   data = 3;
+    google.protobuf.Timestamp generation_time = 4;
+}
+
+message StateSaveRequest {
+    int32   app_id = 1;
+    string  keyword = 2;
+    bytes   data = 3;
+    google.protobuf.Timestamp generation_time = 4;
+}
+
+message StateGetRequest {
+    int32   app_id = 1;
+    string  keyword = 2;
+    google.protobuf.Timestamp generation_time = 3;
+}
+
+message StateListRequest {
+    int32   app_id = 1;
+    string  keyword = 2;
+
+    // generation time range to include
+    google.protobuf.Timestamp generation_time_from = 3;
+    google.protobuf.Timestamp generation_time_to = 4;
+}
+
+service AIDecisionStateService {
+
+    rpc Save(StateSaveRequest) returns (State);
+
+    rpc Get(StateGetRequest) returns (State);
+
+    rpc List(StateListRequest) returns (stream State);
+}

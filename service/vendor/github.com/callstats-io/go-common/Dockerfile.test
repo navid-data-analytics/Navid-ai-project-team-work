@@ -1,0 +1,8 @@
+FROM golang:1.10
+RUN go get github.com/Masterminds/glide github.com/golang/lint/golint
+WORKDIR /go/src/github.com/callstats-io/go-common/
+# Used by jenkins to install deps, locally these are somewhat unnecessary
+ADD glide.yaml glide.lock ./
+RUN glide install; cp -auR vendor/* /go/src/
+ADD . .
+CMD golint $(go list ./... | grep -v /vendor/) && go vet $(go list ./... | grep -v /vendor/) && go test $(go list ./... | grep -v /vendor/ | grep -v vault) && go test ./vault

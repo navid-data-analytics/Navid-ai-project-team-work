@@ -1,0 +1,14 @@
+[
+  {
+    "path": "dev/generic/gocommon/testpath/path",
+    "values": {
+      "foobar": "Zm9vYmFyDQo="
+    }
+  },
+  {
+    "path": "dev/generic/gocommon/testpath/another",
+    "values": {
+      "dev/generic/gocommon/testpath/another": "ZGV2L2dlbmVyaWMvZ29jb21tb24vdGVzdHBhdGgvYW5vdGhlcg=="
+    }
+  }
+]

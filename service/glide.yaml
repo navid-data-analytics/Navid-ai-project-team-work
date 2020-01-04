@@ -1,0 +1,24 @@
+package: github.com/callstats-io/ai-decision/service
+import:
+- package: github.com/golang/protobuf
+  version: v1.2.0
+  subpackages:
+  - proto
+- package: golang.org/x/net
+  version: c39426892332e1bb5ec0a434a079bf82f5d30c54
+- package: google.golang.org/grpc
+  version: v1.14
+- package: github.com/callstats-io/go-common
+  version: master
+- package: github.com/uber-go/zap
+  version: c064b5c44b285a7e2fd5c9b26e8c38228ce2bccb
+- package: github.com/uber-go/atomic
+  version: 0c9e689d64f004564b79d9a663634756df322902
+- package: github.com/hashicorp/vault
+  version: v0.6.2
+- package: github.com/getsentry/raven-go
+- package: github.com/go-pg/migrations
+  version: v6.2.0
+testImport:
+- package: github.com/stretchr/testify
+  version: ~1.2.0

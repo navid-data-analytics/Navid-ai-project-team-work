@@ -1,0 +1,46 @@
+package: github.com/callstats-io/go-common
+import:
+- package: github.com/uber-go/zap
+  version: c064b5c44b285a7e2fd5c9b26e8c38228ce2bccb
+- package: github.com/uber-go/atomic
+  version: 0c9e689d64f004564b79d9a663634756df322902
+- package: github.com/dimfeld/httptreemux
+  version: v3.5.1
+- package: github.com/dimfeld/httppath
+- package: github.com/hashicorp/vault
+  version: v0.6.2
+  subpackages:
+  - api
+- package: github.com/dgrijalva/jwt-go
+  version: v3.0.0
+- package: github.com/armon/go-proxyproto
+- package: github.com/NYTimes/gziphandler
+- package: github.com/h2non/gock
+  version: v1.0.3
+- package: github.com/aws/aws-sdk-go
+  version: 0bba0f7f68dc6317b2715daf5b4e4815889b1d73
+- package: github.com/samuel/go-zookeeper
+  subpackages:
+  - zk
+- package: github.com/jinzhu/inflection
+- package: github.com/stretchr/testify
+  version: v1.1.4
+  subpackages:
+  - assert
+  - require
+- package: github.com/prometheus/client_golang
+  version: 42552c195dd3f3089fbf9cf26e139da150af35aa
+- package: github.com/prometheus/client_model
+  version: 6f3806018612930941127f2a7c6c453ba2c527d2
+- package: google.golang.org/grpc
+  version: c8105071640ef29fce843ed96983e864bb18eb0e
+- package: github.com/globalsign/mgo
+- package: github.com/go-pg/pg
+  version: v6.13.4
+- package: github.com/go-pg/migrations
+  version: v6.2.0
+testImport:
+- package: github.com/onsi/ginkgo
+  version: v1.2.0
+- package: github.com/onsi/gomega
+  version: v1.0.0

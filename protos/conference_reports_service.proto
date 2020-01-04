@@ -1,0 +1,444 @@
+syntax = "proto3";
+option go_package = "protos";
+
+//import "github.com/golang/protobuf/ptypes/timestamp/timestamp.proto";
+//import "github.com/golang/protobuf/ptypes/duration/duration.proto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+service ConferenceReportsService {
+  rpc ListAvailableFilters(ListAvailableFiltersRequest) returns (ListAvailableFiltersResponse);
+  rpc ListConferences(ListConferencesRequest) returns (ListConferencesResponse);
+  rpc ListFilterValues(ListFilterValuesRequest) returns (ListFilterValuesResponse);
+  rpc Aggregate(AggregateRequest) returns (AggregateResponse);
+  rpc AggregateTimeSeries(AggregateTimeSeriesRequest) returns (AggregateTimeSeriesResponse);
+  rpc Metrics(MetricsRequest) returns (MetricsResponse);
+}
+
+message ListAvailableFiltersRequest {
+}
+
+message ListAvailableFiltersResponse {
+  repeated Filter.Name filters = 1;
+}
+
+message ListConferencesRequest {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  string conf_id = 10;
+  string user_id = 11;
+
+  Filter filter = 20;
+
+  int32 skip = 30;
+  int32 limit = 31;
+}
+
+message ListConferencesResponse {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  repeated Conference conferences = 10;
+  int32 count_terminated = 11;
+  int32 count_ongoing = 12;
+  int32 count_uncategorized = 13;
+}
+
+message ListFilterValuesRequest {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  Filter.Name values_for = 10;
+  Filter filter = 11;
+
+  string request_id = 20;
+}
+
+message AsyncJob {
+  enum Status {
+    NO_STATUS = 0;
+    QUERYING = 1;
+    FINISHED = 2;
+  }
+
+}
+
+message ListFilterValuesResponse {
+  enum Status {
+    NO_STATUS = 0;
+    QUERYING = 1;
+    FINISHED = 2;
+  }
+
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  Filter.Name values_for = 10;
+  repeated string values = 11;
+
+  string request_id = 20;
+  Status status = 21; // TODO: use only AsyncJob.Status field in future
+  AsyncJob.Status job_status = 22; // TODO: rename
+}
+
+message AggregateRequest {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  // Top-level filters; conf_id, user_id, aggregation_filter and
+  // secondary_filter below are translated to AND queries.
+
+  string conf_id = 10;
+  string user_id = 11;
+
+  Filter aggregation_filter = 20;
+
+  string request_id = 21;
+
+  bool async = 22;
+}
+
+message Filter {
+  message Status {
+    Conference.Status status = 1;
+    Conference.FailureReason failure_reason = 2;
+  }
+
+  message String {
+    Comparison.Operator operator = 1;
+    string value = 2;
+  }
+
+  message Integer {
+    Comparison.Operator operator = 1;
+    int32 value = 2;
+  }
+
+  message Float {
+    Comparison.Operator operator = 1;
+    float value = 2;
+  }
+
+  message FloatRange {
+    float min = 1;
+    float max = 2;
+    bool include_min = 3; // if true then use “greater than or equal to min”, otherwise just “greater than min”
+    bool include_max = 4; // if true then use “less than or equal to max”, otherwise just “less than max”
+
+    bool lower_end_open = 5; // if true then query is "less than max"
+    bool upper_end_open = 6; // if true then query is "greater than min"
+  }
+
+  message Versioned {
+    string name = 1;
+    string version = 2;
+  }
+
+  message EndpointType {
+    Comparison.Operator operator = 1;
+    Conference.EndpointType value = 2;
+  }
+
+  enum Name {
+    UNSPECIFIED = 0;
+    OS_NAME = 1;
+    OS_VERSION = 2;
+    BROWSER_NAME = 3;
+    BROWSER_VERSION = 4;
+    APP_VERSION = 5;
+
+    // the following names are used only for available filter listing
+    CONFERENCE_STATUS = 10;
+    CONFERENCE_FAILURE_REASON = 11;
+    USER_FEEDBACK = 12;
+    OBJECTIVE_QUALITY = 13;
+    COUNTRY = 14;
+    ENDPOINT_TYPE = 15;
+
+    // top 5 supported metrics
+    CONFERENCE_DURATION = 16;
+    CONFERENCE_SETUP_DURATION = 17;
+    NUM_PARTICIPANTS = 18;
+    RTT = 19;
+    RECEIVED_AUDIO_THROUGHPUT = 20;
+    RECEIVED_VIDEO_THROUGHPUT = 21;
+    SENT_AUDIO_THROUGHPUT = 22;
+    SENT_VIDEO_THROUGHPUT = 23;
+  }
+
+  // Repeated filters are translated to OR queries.
+  repeated Filter.Status conference_status = 1;
+  repeated Filter.Integer user_feedback = 2;
+
+  // service level reports filters
+  repeated Filter.FloatRange objective_quality = 10;
+  repeated Filter.Versioned os = 11;
+  repeated Filter.Versioned browser = 12;
+  repeated Filter.String app_version = 13;
+  repeated Filter.String country = 14;
+  repeated Filter.EndpointType endpoint_type = 15;
+}
+
+message Conference {
+  enum Status {
+    ANY = 0;
+    TERMINATED = 1;
+    SUCCESS = 2;
+    DROPPED = 3;
+    PARTIALLY_FAILED = 4;
+    TOTALLY_FAILED = 5;
+    WITH_CHURN = 6;
+    RELAYED = 7;
+    ONGOING = 8;
+  }
+
+  enum FailureReason {
+    UNSPECIFIED = 0;
+    SIGNALING_ERROR = 1;
+    MEDIA_SOURCE_ERROR = 2;
+    SDP_ERROR = 3;
+    NEGOTIATION_ERROR = 4;
+    ICE_ERROR = 5;
+    TRANSPORT_ERROR = 6;
+  }
+
+  enum EndpointType {
+    NONE = 0; // because UNSPECIFIED is already taken by failure reason
+    PEER = 1;
+    SERVER = 2;
+  }
+
+  string confID = 1;
+  string ucID = 2;
+  google.protobuf.Timestamp created_ts = 3;
+  google.protobuf.Timestamp terminated_ts = 4;
+  Status status = 5;
+  float objective_quality = 6;
+  FailureReason error_type = 7;
+
+  float objective_quality_v35 = 10;
+}
+
+message Comparison {
+  enum Operator {
+    EQUALS = 0;
+    NOT_EQUALS = 1;
+  }
+}
+
+message AggregateResponse {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  int32 conferences_total = 10;
+  int32 conferences_terminated = 11;
+  int32 conferences_ongoing = 12;
+  int32 conferences_successful = 13;
+  int32 conferences_dropped = 14;
+  int32 conferences_failed_partially = 15;
+  int32 conferences_failed_totally = 16;
+
+  int32 participants_total = 22;
+  float participants_average = 23;
+  int32 connections_total = 24;
+  float connections_average = 25;
+
+  int32 conferences_with_churn = 30;
+  int32 conferences_relayed = 31;
+  float objective_quality_average = 32;
+  float objective_quality_v35_average = 39;
+
+  google.protobuf.Duration conference_duration_total = 40;
+  google.protobuf.Duration conference_duration_average = 41;
+  google.protobuf.Duration conference_setup_duration_average = 42;
+  google.protobuf.Duration user_minutes_total = 43;
+  google.protobuf.Duration user_minutes_average = 44;
+
+  int32 user_feedback_count_1 = 50;
+  int32 user_feedback_count_2 = 51;
+  int32 user_feedback_count_3 = 52;
+  int32 user_feedback_count_4 = 53;
+  int32 user_feedback_count_5 = 54;
+
+  int32 failed_partially_signaling_errors = 60;
+  int32 failed_partially_media_source_errors = 61;
+  int32 failed_partially_sdp_generation_errors = 62;
+  int32 failed_partially_negotiation_failures = 63;
+  int32 failed_partially_ice_connection_failures = 64;
+  int32 failed_partially_transport_failures = 65;
+
+  int32 failed_totally_signaling_errors = 66;
+  int32 failed_totally_media_source_errors = 67;
+  int32 failed_totally_sdp_generation_errors = 68;
+  int32 failed_totally_negotiation_failures = 69;
+  int32 failed_totally_ice_connection_failures = 70;
+  int32 failed_totally_transport_failures = 71;
+
+  google.protobuf.Duration rtt_average = 72;
+  google.protobuf.Duration jitter_average = 73;
+  float outbound_fractional_loss_average = 74; // percent
+  float inbound_fractional_loss_average = 75; // percent
+
+  int32 media_sent_frame_width_average = 81; // pixels
+  int32 media_sent_frame_height_average = 82; // pixels
+  float media_sent_audio_throughput_average = 83; // kbps
+  float media_sent_video_throughput_average = 84; // kbps
+
+  int32 media_received_frame_width_average = 85; // pixels
+  int32 media_received_frame_height_average = 86; // pixels
+  float media_received_audio_throughput_average = 87; // kbps
+  float media_received_video_throughput_average = 88; // kbps
+
+  string request_id = 89;
+  AsyncJob.Status status = 90;
+  float delay_effect_mean = 97;
+  float throughput_effect_mean = 98;
+  float loss_effect_mean = 99;
+
+}
+
+message AggregateTimeSeriesRequest {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+  Series.MetricName metric_name = 4;
+  Series.MetricOperation metric_operation = 5;
+
+  // Top-level filters; conf_id, user_id, aggregation_filter and
+  // secondary_filter below are translated to AND queries.
+
+  string conf_id = 10;
+  string user_id = 11;
+
+  Filter aggregation_filter = 20;
+  Filter series_filter = 21;
+
+  string request_id = 22;
+
+  bool async = 23;
+}
+
+message AggregateTimeSeriesResponse {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+  Series series = 4;
+
+  string request_id = 5;
+  AsyncJob.Status status = 6;
+}
+
+message Series {
+  enum MetricName {
+    CONFERENCE = 0; // count only
+
+    PARTICIPANT = 1; // count and avg
+    CONNECTION = 2; // count and avg
+
+    OBJECTIVE_QUALITY = 3; // avg only
+
+    CONFERENCE_DURATION = 4; // count and avg
+    CONFERENCE_SETUP_DURATION = 5; // avg only
+
+    USER_FEEDBACK = 6; // count and avg
+
+    // avg only for all below
+    RTT = 7;
+    JITTER = 8;
+    OUTBOUND_FRACTIONAL_LOSS = 9;
+    INBOUND_FRACTIONAL_LOSS = 10;
+
+    SENT_FRAME_WIDTH = 11;
+    SENT_FRAME_HEIGHT = 12;
+    SENT_AUDIO_THROUGHPUT = 13;
+    SENT_VIDEO_THROUGHPUT = 14;
+    RECEIVED_FRAME_WIDTH = 15;
+    RECEIVED_FRAME_HEIGHT = 16;
+    RECEIVED_AUDIO_THROUGHPUT = 17;
+    RECEIVED_VIDEO_THROUGHPUT = 18;
+
+    USER_MINUTES = 20; // count and avg
+
+    OBJECTIVE_QUALITY_V35 = 30; // avg only
+
+    DELAY_EFFECT_MEAN = 31;
+    LOSS_EFFECT_MEAN = 32;
+    THROUGHPUT_EFFECT_MEAN = 33;
+  }
+
+  enum MetricOperation {
+    COUNT = 0;
+    AVERAGE = 1;
+  }
+
+  message Value {
+    google.protobuf.Timestamp timestamp = 1;
+    float value = 2;
+  }
+
+  Series.MetricName metric_name = 1;
+  Series.MetricOperation metric_operation = 2;
+  repeated Series.Value values = 3;
+}
+
+message MetricsRequest {
+  message Metric {
+    Filter.Name key = 1; // primary key to group-count by, eg. OS name
+    Filter.Name secondary_key = 2; // additional key to group-count by, eg. OS version
+
+    // these two are exclusive
+    // if top_n > 0, then we return grouped counts for distinct values
+    // if top_n == 0 and len(ranges) > 0, then counts are bucketed to float ranges
+    int32 top_n = 3; // how many entries should be returned (max)
+    repeated Filter.FloatRange ranges = 4; // what float ranges should the data be bucketed in
+  }
+
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  string conf_id = 10;
+  string user_id = 11;
+
+  Filter filter = 20;
+
+  repeated Metric metrics = 30;
+
+  string request_id = 50;
+  bool async = 51;
+}
+
+message MetricsResponse {
+  int32 app_id = 1;
+  google.protobuf.Timestamp from_ts = 2;
+  google.protobuf.Timestamp to_ts = 3;
+
+  repeated MetricData metric_data = 4;
+  int32 conference_count = 5;
+
+  AsyncJob.Status status = 10;
+  string request_id = 11;
+}
+
+message MetricData {
+  message Item {
+    string value = 1; // which value was the item about, eg. "Chrome 65.0"
+    Filter.FloatRange range = 2; // which range ie. bucket this item represents, eg. "objective quality [0, 1]"
+
+    // how many occurrences of a value there was
+    // or how many data items were within a range
+    int32 count = 3;
+  }
+
+  Filter.Name key = 1; // primary value group-counted by, eg. OS name
+  Filter.Name secondary_key = 2; // additional value group-counted by, eg. OS version
+  repeated Item items = 3;
+}

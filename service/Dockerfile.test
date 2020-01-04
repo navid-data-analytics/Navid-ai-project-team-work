@@ -1,0 +1,5 @@
+FROM golang:1.11
+RUN go get -u golang.org/x/lint/golint
+WORKDIR /go/src/github.com/callstats-io/ai-decision/service/
+ADD . .
+CMD golint $(go list ./... | grep -v vendor | grep -v protos) && go vet $(go list ./... | grep -v vendor | grep -v protos) && go test $(go list ./src/...)

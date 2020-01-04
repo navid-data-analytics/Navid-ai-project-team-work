@@ -1,0 +1,142 @@
+ai_decision:
+  build: .
+  dockerfile: Dockerfile
+  environment:
+    ENV: 'dev'
+    VERSION: 'local-env'
+    APPIDS: '722018081,380077084,748139165,331463193,347489791,815616092,486784909,739234857,928873129,943549171,234913325,602363212'
+    SENTRY_CREDENTIALS: 'xxx'
+    LOG_LEVEL: 'INFO'
+    PORT_PROMETHEUS: '8084'
+    AID_SERVICE_GRPC_ADDR: 'ai_decision_service:13050'
+    CRS_GRPC_ADDR: '192.168.99.101:13000'
+    UNSUPPRESS: '{}'
+    MANUAL_DATE: '{}'
+  links:
+    - ai_decision_service
+  expose:
+    - '8084'
+  ports:
+    - '8084:8084'
+
+
+test_ai_decision:
+  build: .
+  dockerfile: Dockerfile.test
+  environment:
+    LOG_LEVEL: 'DEBUG'
+
+
+csiojupyter:
+  build: .
+  dockerfile: Dockerfile.jupyter
+  environment:
+    MONGO_HOST: 'xxxx'
+    MONGO_USERNAME: 'xxxx'
+    MONGO_PASSWORD: 'xxxx'
+    MONGO_AUTH_SOURCE: 'admin'
+    MONGO_AUTH_MECHANISM: 'SCRAM-SHA-1'
+    SENTRY_CREDENTIALS: 'xxxx'
+    DATABASE: 'analytics'
+    COLLECTION: 'fabric_aggregation_rtq'
+  ports:
+    - '8888:8888'
+
+
+ai_decision_service:
+  build: ./service
+  ports:
+    - "13050:13050"
+    - "13051:13051"
+  volumes:
+    - ./service/creds/:/go/src/github.com/callstats-io/ai-decision/service/creds
+  links:
+    - vault_service
+    - postgres_service
+  environment:
+    - ENV=dev
+    - SERVICE_NAME=ai_decision_service
+    - LOG_LEVEL=INFO
+    - GRPC_PORT=13050
+    - HTTP_PORT=13051
+    - SENTRY_DSN=https://invalid/does/not/exist
+    # Vault usage
+    - VAULT_AUTHCREDENTIALS=file:/go/src/github.com/callstats-io/ai-decision/service/creds/vault_dev_creds.json
+    - VAULT_ADDR=http://vault_service:8200
+    - VAULT_SKIP_VERIFY=true
+    - VAULT_ENABLE_POSTGRES=true
+    - VAULT_POSTGRES_NAME=ai_decision_service
+    - VAULT_POSTGRES_CREDS_PATH=dev/postgresql/ai_decision_service/creds/ai_decision_service
+    - POSTGRES_CONN_TMPL=postgres://%s:%s@postgres_service:5432/ai_decision_service
+    - POSTGRES_ROOT_ROLE=ai_decision_service
+    - POSTGRES_READ_ONLY_ROLE=ai_decision_service # does not work locally unless a read only role has been manually set up
+  command: '/bin/bash -c "/go/bin/ai-decision-service --server=false --migrate=init && exec /go/bin/ai-decision-service --server=true --migrate=up"'
+
+test_ai_decision_service:
+  build: ./service
+  dockerfile: Dockerfile.test
+  volumes:
+    - ./service/:/go/src/github.com/callstats-io/ai-decision/service
+  links:
+    - vault_service
+    - postgres_service
+  environment:
+    - ENV=test
+    - SERVICE_NAME=ai_decision_service
+    - LOG_LEVEL=ERROR
+    - GRPC_PORT=13050
+    - HTTP_PORT=13051
+    - SENTRY_DSN=https://invalid/does/not/exist
+    # Vault usage
+    - VAULT_ADDR=http://vault_service:8200
+    - VAULT_SKIP_VERIFY=true
+    - VAULT_ENABLE_POSTGRES=true
+    - VAULT_POSTGRES_NAME=ai_decision_service
+    - VAULT_POSTGRES_CREDS_PATH=test/postgresql/ai_decision_service/creds/ai_decision_service
+    - POSTGRES_CONN_TMPL=postgres://%s:%s@postgres_service:5432/ai_decision_service_test
+    - POSTGRES_ROOT_ROLE=ai_decision_service
+    - POSTGRES_READ_ONLY_ROLE=ai_decision_service_read_only
+    # Vault bootstrap
+    - VAULT_TEST_BOOTSTRAP_TOKEN=7d52e719-c3bb-4fd0-9f08-6e11051fea19
+    - VAULT_POSTGRES_ROOT_URL=postgres://ai_decision_service:test@postgres_service:5432/ai_decision_service_test?sslmode=disable
+
+postgres_service:
+  image: postgres:10.3 # must match prod db, talk to ops before changing version
+  environment:
+    - POSTGRES_USER=ai_decision_service
+    - POSTGRES_PASSWORD=test
+    - POSTGRES_DB=ai_decision_service
+
+postgres_service_shell:
+  image: postgres:10.3 # must match prod db, talk to ops before changing version
+  links:
+    - postgres_service
+  command: "psql -h postgres_service -U ai_decision_service -d ai_decision_service"
+
+vault_service:
+  image: vault:0.7.0
+  environment:
+    - VAULT_DEV_ROOT_TOKEN_ID=7d52e719-c3bb-4fd0-9f08-6e11051fea19
+  links:
+    - postgres_service
+
+vaultbootstrapdev_service:
+  build: ./service
+  dockerfile: ./vendor/github.com/callstats-io/go-common/tools/Dockerfile
+  volumes:
+    - ./service/creds/:/output
+    - ./service/vendor/:/go/src/github.com/callstats-io/go-common/tools/vendor
+  environment:
+    - ENV=dev
+    - SERVICE_NAME=ai_decision_service
+    - VAULT_TOKEN=7d52e719-c3bb-4fd0-9f08-6e11051fea19
+    - VAULT_ADDR=http://vault_service:8200/
+    - VAULT_POSTGRES_NAME=ai_decision_service
+    - VAULT_POSTGRES_ROOT_URL=postgres://ai_decision_service:test@postgres_service:5432/ai_decision_service?sslmode=disable
+    - VAULT_TLS_CERT_NAME=x509
+    - TLS_CERT_FILE=/go/src/github.com/callstats-io/go-common/tools/devcerts/cert.pem
+    - TLS_CERT_KEY_FILE=/go/src/github.com/callstats-io/go-common/tools/devcerts/key.pem
+  links:
+    - postgres_service
+    - vault_service
+  command: '/go/bin/tools bootstrap-vault -with-postgres'

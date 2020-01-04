@@ -1,0 +1,88 @@
+test_go_common:
+  build: .
+  dockerfile: Dockerfile.test
+  volumes:
+    - .:/go/src/github.com/callstats-io/go-common
+  links:
+    - mongo
+    - postgres
+    - vault
+    - zookeeper
+    - kafka
+  environment:
+    - ENV=test
+    - SERVICE_NAME=go_common
+    - HTTPS_PORT=6500
+    - HTTP_PORT=6501
+    - GRPC_PORT=6502
+    - LOG_LEVEL=PANIC
+    # Vault usage
+    - VAULT_ADDR=http://vault:8200
+    - VAULT_SKIP_VERIFY=true
+    - VAULT_ENABLE_MONGO=true
+    - VAULT_MONGO_CREDS_PATH=test/mongodb/testc1/creds/go_common
+    - MONGO_CONN_TMPL=mongodb://%s:%s@mongo:27017/admin
+    - MONGO_DIAL_TIMEOUT=3s
+    - VAULT_ENABLE_POSTGRES=true
+    - VAULT_POSTGRES_CREDS_PATH=test/postgresql/go_common_vault/creds/go_common
+    - POSTGRES_CONN_TMPL=postgres://%s:%s@postgres:5432/go_common_test
+    - VAULT_ENABLE_TLS_CERT=true
+    - VAULT_TLS_CERT_PATH=test/generic/go_common/certificates/x509/cert
+    - VAULT_TLS_CERT_KEY_PATH=test/generic/go_common/certificates/x509/key
+    - VAULT_ENABLE_AWS=false
+    - VAULT_AWS_CREDS_PATH=test/aws/sts/go_common
+    # Vault bootstrap, required for testing/setting up vault in local environment.
+    # For services using go-common these are required for tests + vaultbootstrap run,
+    # but should not be required for the actual service to run
+    - VAULT_TEST_BOOTSTRAP_TOKEN=7d52e719-c3bb-4fd0-9f08-6e11051fea19
+    - VAULT_POSTGRES_NAME=go_common_vault
+    - VAULT_POSTGRES_ROOT_URL=postgres://go_common:test@postgres:5432/go_common_test?sslmode=disable
+    - VAULT_POSTGRES_CONN_TMPL=postgres://%s:%s@postgres:5432/go_common_test
+    - VAULT_MONGO_CLUSTER_NAME=testc1
+    - VAULT_MONGO_ROOT_URL=mongodb://vault:vault@mongo:27017/admin?ssl=false
+    - VAULT_MONGO_CONN_TMPL=mongodb://%s:%s@mongo:27017/admin
+    - VAULT_TLS_CERT_NAME=x509
+    - VAULT_AWS_REGION=eu-west-1
+    - VAULT_AWS_ROOT_ACCESS_KEY=AAAAAAAAAAAAAAAAAAAA
+    - VAULT_AWS_ROOT_SECRET_KEY=zZzZzZzZzZzZ1234zZzZzZzZzZzZzZzZ123456
+    - VAULT_AWS_ROLE_NAME=go_common
+    - VAULT_AWS_ROLE_POLICY_JSON=../vault/testdata/aws_invite_email_role_policy.json
+    - VAULT_AWS_ASSUME_ROLE=go_common|arn:aws:iam::123412342134:role/go_common_fake_role_name
+    - ZOOKEEPER_URLS=zookeeper
+    - VAULT_GENERIC_DATA_FILE=../vault/testdata/genericdata.json
+
+mongo:
+  image: mongo:3.6
+  environment:
+    - MONGO_INITDB_ROOT_USERNAME=vault
+    - MONGO_INITDB_ROOT_PASSWORD=vault
+
+postgres:
+  image: postgres:9.5
+  environment:
+    - POSTGRES_USER=go_common
+    - POSTGRES_PASSWORD=test
+    - POSTGRES_DB=go_common
+
+vault:
+  image: vault:0.6.2
+  environment:
+    - VAULT_DEV_ROOT_TOKEN_ID=7d52e719-c3bb-4fd0-9f08-6e11051fea19
+  links:
+    - mongo
+    - postgres
+
+zookeeper:
+  image: zookeeper:3.4
+
+kafka:
+  image: ches/kafka:0.8.2.2
+  links:
+    - zookeeper
+  environment:
+    - KAFKA_ADVERTISED_HOST_NAME=kafka
+    - ZOOKEEPER_IP=zookeeper
+    - KAFKA_PORT=9092
+    - KAFKA_ADVERTISED_PORT=9092
+  extra_hosts:
+    - "kafka:127.0.0.1"
